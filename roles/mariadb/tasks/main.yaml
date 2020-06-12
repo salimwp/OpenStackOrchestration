@@ -1,0 +1,41 @@
+---
+
+- name: Installing MariaDB and python packages
+  yum: name={{ item }} state=installed
+  with_items:
+    - mariadb
+    - mariadb-server
+    - python2-PyMySQL
+    - MySQL-python
+
+- name: Transferring OpenStack MariaDB config
+  copy: src=openstack.cnf dest=/etc/my.cnf.d/openstack.cnf
+
+- name: Start MariaDB service
+  service: name=mariadb state=started enabled=yes
+
+- name: Set Root password for localhost
+  mysql_user: name=root host="localhost" password="{{ MARIADB_PASS }}" login_user=root login_password="" state=present
+  ignore_errors: yes
+  tags: initmariadb
+
+- name: Set Root password for other hosts
+  mysql_user: name=root host="{{ item }}" password="{{ MARIADB_PASS }}" login_user=root login_password="{{ MARIADB_PASS }}" state=present
+  with_items:
+    - "localhost.localdomain"
+    - "127.0.0.1"
+    - "::1"
+    - "compute1"
+    - "10.0.0.31"
+  tags: initmariadb
+
+- name: Remove anonymous user
+  mysql_user: name='' host="{{ item }}" login_user=root login_password="{{ MARIADB_PASS }}" state=absent
+  with_items:
+    - "localhost"
+    - "localhost.localdomain"
+  tags: initmariadb
+
+- name: Remove test database
+  mysql_db: name=test login_user=root login_password="{{ MARIADB_PASS }}" state=absent
+  tags: initmariadb

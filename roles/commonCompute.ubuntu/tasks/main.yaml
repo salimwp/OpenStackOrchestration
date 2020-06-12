@@ -1,0 +1,19 @@
+---
+- name: Disabling firewalld
+  ufw:
+    state: enabled
+    policy: allow
+
+- name: Updating /etc/hosts
+  copy: src=etc.hosts dest=/etc/hosts
+
+- name: Installing chrony
+  apt: 
+    name: chrony 
+    state: present
+
+- name: Transferring Chrony configure
+  copy: src=etc.chrony-compute dest=/etc/chrony.conf
+
+- name: Starting chrony server
+  systemctl: name=chronyd state=started enabled=yes

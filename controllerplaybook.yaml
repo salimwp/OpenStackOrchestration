@@ -1,0 +1,11 @@
+---
+
+- name: Setting up OpenStack Controller
+  hosts: controller1
+  become: yes
+  become_method: sudo
+  roles:
+    - commonController
+    - packages
+    - mariadb
+    - messagequeue

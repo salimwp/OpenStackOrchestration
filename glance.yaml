@@ -1,0 +1,7 @@
+---
+- name: Setting up glance
+  hosts: controller1
+  become: yes
+  become_method: sudo
+  roles:
+    - glance

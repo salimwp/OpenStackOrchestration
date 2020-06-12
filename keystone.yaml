@@ -1,0 +1,8 @@
+---
+
+- name: Setting up Keystone
+  hosts: controller1
+  become: yes
+  become_method: sudo
+  roles:
+    - keystone

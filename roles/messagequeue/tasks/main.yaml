@@ -1,0 +1,27 @@
+---
+  
+- name: Installing Message Queue
+  yum: name={{ item }} state=installed
+  with_items:
+    - rabbitmq-server
+    - memcached
+    - python-memcached
+
+- name: Starting Message Queue
+  service: name=rabbitmq-server state=started enabled=yes
+
+- name: Creating openstack message queue user
+  rabbitmq_user:
+    user: openstack
+    password: "{{ RABBIT_PASS }}"
+    vhost: /
+    configure_priv: .*
+    read_priv: .*
+    write_priv: .*
+    state: present
+
+- name: Transferring memcached config
+  copy: src=memcached dest=/etc/sysconfig/memcached
+
+- name: Starting memcached
+  service: name=memcached state=started enabled=yes

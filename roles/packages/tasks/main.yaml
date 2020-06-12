@@ -1,0 +1,16 @@
+---
+- name: Install OpenStack repo
+  yum:
+    name: centos-release-openstack-ocata
+    state: installed
+
+- name: Install the OpenStack client
+  yum:
+    name: python-openstackclient
+    state: installed
+
+- name: Install Openstack SELinux
+  yum:
+    name: openstack-selinux
+    state: installed
+

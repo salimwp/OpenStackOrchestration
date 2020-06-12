@@ -1,0 +1,113 @@
+---
+  
+- name: Creating keystone database
+  mysql_db: name=keystone state=present login_user=root login_password={{ MARIADB_PASS }}
+
+- name: Creating keystone DB user
+  mysql_user: name=keystone password={{ KEYSTONE_DBPASS }} priv='keystone.*:ALL' state=present login_user=root login_password={{ MARIADB_PASS }} host="{{ item }}"
+  with_items:
+    - "localhost.localdomain"
+    - "127.0.0.1"
+    - "::1"
+    - "compute1"
+    - "10.0.0.31"
+    - "controller1"
+    - "10.0.0.11"
+
+- name: Installing openstack keystone packages
+  yum: name={{ item }} state=installed
+  with_items:
+    - openstack-keystone
+    - httpd
+    - mod_wsgi
+    - python-pip
+
+- name: Transferring keystone config
+  template: src=keystone.conf.j2 dest=/etc/keystone/keystone.conf
+
+- name: populating identity service database
+  become: yes
+  become_user: keystone
+  command: keystone-manage db_sync
+  ignore_errors: yes
+
+- name: initializing Fernet Key repo (1/2)
+  command: keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+
+- name: initializing Fernet Key repo (2/2)
+  command: keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+- name: bootstrapping Identity Service
+  command: keystone-manage bootstrap --bootstrap-password {{ ADMIN_PASS }} --bootstrap-admin-url http://controller1:35357/v3/ --bootstrap-internal-url http://controller1:5000/v3/ --bootstrap-public-url http://controller1:5000/v3/ --bootstrap-region-id RegionOne
+  ignore_errors: yes
+
+- name: Transferring httpd.conf
+  template: src=httpd.conf.j2 dest=/etc/httpd/conf/httpd.conf
+
+- name: symlinking wsgi-keystone
+  file: src=/usr/share/keystone/wsgi-keystone.conf dest=/etc/httpd/conf.d/wsgi-keystone.conf state=link
+
+- name: Starting httpd
+  service: name=httpd enabled=yes state=started
+
+- name: Creating admin config file
+  template: src=admin.sh.js dest=/home/vagrant/admin.sh
+
+- name: Create demo config file
+  template: src=demo.sh.j2 dest=/home/vagrant/demo.sh
+
+- name: Creating openstack etc dir
+  file: path=/etc/openstack state=directory mode=0600
+
+- name: Transferring clouds.yaml
+  template: src=clouds.yaml.j2 dest=/etc/openstack/clouds.yaml
+
+- name: Installing Python Shade
+  pip: name=shade
+
+- name: Creating Service Project
+  os_project:
+    cloud: default
+    description: Service Project
+    domain_id: default
+    enabled: true
+    name: service
+    state: present
+
+- name: Creating Demo Project
+  os_project:
+    cloud: default
+    description: Demo Project
+    domain_id: default
+    enabled: true
+    name: demo
+    state: present
+
+- name: Creating demo user
+  os_user:
+    cloud: default
+    state: present
+    name: demo
+    password: demo1234
+    email: demo@test.domain
+    domain: default
+    default_project: demo
+
+- name: Creating user role
+  os_keystone_role:
+    cloud: default
+    state: present
+    name: user
+
+- name: adding user role to demo project and user
+  os_user_role:
+    cloud: default
+    state: present
+    user: demo
+    role: user
+    project: demo
+
+- name: Transferring new keystone-paste.ini
+  copy: src=keystone-paste.ini dest=/etc/keystone/keystone-paste.ini
+
+

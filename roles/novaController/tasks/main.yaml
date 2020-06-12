@@ -1,0 +1,251 @@
+---
+
+- name: Creating nova databases
+  mysql_db: name={{ item }}  state=present login_user=root login_password={{ MARIADB_PASS }}
+  with_items:
+    - nova_api
+    - nova
+    - nova_cell0
+
+- name: Creating nova DB user
+  mysql_user: 
+    name: nova 
+    password: "{{ NOVA_DBPASS }}"
+    priv: "{{ item[1] }}.*:ALL" 
+    state: present 
+    login_user: root 
+    login_password: "{{ MARIADB_PASS }}"
+    host: "{{ item[0] }}"
+    append_privs: yes
+  with_nested:
+    - [ 'localhost.localdomain', '127.0.0.1', '::1', 'compute1', '10.0.0.31', 'controller1', '10.0.0.11']
+    - [ 'nova_api', 'nova', 'nova_cell0']
+
+- name: Creating nova user
+  os_user: 
+    cloud: default
+    state: present
+    name: nova
+    password: "{{ NOVA_PASS }}"
+    email: nova@test.domain
+    domain: default
+
+- name: Creating placement user
+  os_user: 
+    cloud: default
+    state: present
+    name: placement
+    password: "{{ PLACEMENT_PASS }}"
+    email: nova@test.domain
+    domain: default
+
+- name: adding admin role to nova
+  os_user_role:
+    cloud: default
+    state: present
+    user: nova
+    role: admin
+    project: service
+
+- name: adding admin role to placement
+  os_user_role:
+    cloud: default
+    state: present
+    user: placement
+    role: admin
+    project: service
+
+- name: Creating nova service
+  os_keystone_service:
+    cloud: default
+    state: present
+    name: nova
+    service_type: compute
+    description: OpenStack Compute
+
+- name: Create Placement service
+  os_keystone_service:
+    cloud: default
+    state: present
+    name: placement
+    service_type: placement
+    description: Placement API
+
+- name: Creating Compute service API endpoints
+  shell: |
+    export OS_USERNAME=admin
+    export OS_PASSWORD={{ ADMIN_PASS }}
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=Default
+    export OS_PROJECT_DOMAIN_NAME=Default
+    export OS_AUTH_URL=http://controller1:35357/v3
+    export OS_IDENTITY_API_VERSION=3
+    openstack endpoint list | grep nova
+    if [ $? -eq 1 ]; then
+      openstack endpoint create --region RegionOne compute public http://controller1:8774/v2.1
+      openstack endpoint create --region RegionOne compute internal http://controller1:8774/v2.1
+      openstack endpoint create --region RegionOne compute admin http://controller1:8774/v2.1
+    fi
+
+- name: Creating Placement service API endpoints
+  shell: |
+    export OS_USERNAME=admin
+    export OS_PASSWORD={{ ADMIN_PASS }}
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=Default
+    export OS_PROJECT_DOMAIN_NAME=Default
+    export OS_AUTH_URL=http://controller1:35357/v3
+    export OS_IDENTITY_API_VERSION=3
+    openstack endpoint list | grep placement
+    if [ $? -eq 1 ]; then
+      openstack endpoint create --region RegionOne placement public http://controller1:8778
+      openstack endpoint create --region RegionOne placement internal http://controller1:8778
+      openstack endpoint create --region RegionOne placement admin http://controller1:8778
+    fi
+
+- name: Installing openstack nova packages
+  yum: name={{ item }} state=installed
+  with_items:
+    - openstack-nova-api
+    - openstack-nova-conductor
+    - openstack-nova-console
+    - openstack-nova-novncproxy
+    - openstack-nova-scheduler
+    - openstack-nova-placement-api
+
+- name: Transferring nova config
+  template: src=nova.conf.compute.j2 dest=/etc/nova/nova.conf
+
+- name: Transferring nova-placement-api
+  template: src=00-nova-placement-api.conf.j2  dest=/etc/httpd/conf.d/00-nova-placement-api.conf
+
+- name: populating nova-api database
+  become: yes
+  become_user: nova
+  command: nova-manage api_db sync
+  ignore_errors: no
+
+- name: Register the cell0 database
+  become: yes
+  become_user: nova
+  command: nova-manage cell_v2 map_cell0
+  ignore_errors: yes
+
+- name: Create the cell1 cell
+  become: yes
+  become_user: nova
+  command: nova-manage cell_v2 create_cell --name=cell1 --verbose
+  ignore_errors: yes
+
+- name: Populate the nova database
+  become: yes
+  become_user: nova
+  command: nova-manage db sync
+
+- name: Start the Compute services and configure them to start when the system boots
+  service: name={{ item }} state=started enabled=yes
+  with_items:
+    - openstack-nova-api
+    - openstack-nova-consoleauth
+    - openstack-nova-scheduler
+    - openstack-nova-conductor
+    - openstack-nova-novncproxy
+
+- name: Restarting httpd
+  service: name=httpd state=restarted enabled=yes
+
+- name: Adding compute host to controller
+  become: yes
+  become_user: nova
+  shell: |
+    export OS_USERNAME=admin
+    export OS_PASSWORD={{ ADMIN_PASS }}
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=Default
+    export OS_PROJECT_DOMAIN_NAME=Default
+    export OS_AUTH_URL=http://controller1:35357/v3
+    export OS_IDENTITY_API_VERSION=3
+    nova-manage cell_v2 discover_hosts --verbose
+
+#- name: Starting glance api
+#  service: name=openstack-glance-api state=restarted enabled=yes
+
+#- name: Starting glance registry
+#  service: name=openstack-glance-registry state=restarted enabled=yes
+
+#- name: Copying cirros
+#  copy: src=cirros-0.3.5-x86_64-disk.img dest=/tmp/cirros-0.3.5-x86_64-disk.img
+
+#- name: Installing cirros image
+#  os_image:
+#    cloud: default
+#    name: cirros
+#    container_format: bare
+#    disk_format: qcow2
+#    state: present
+#    filename: /tmp/cirros-0.3.5-x86_64-disk.img
+#    kernel: cirros-vmlinuz
+#    ramdisk: cirros-initrd
+#    properties:
+#      cpu_arch: x86_64
+#      distro: ubuntu
+
+#- name: initializing Fernet Key repo (1/2)
+#  command: keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+
+#- name: initializing Fernet Key repo (2/2)
+#  command: keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+#- name: bootstrapping Identity Service
+#  command: keystone-manage bootstrap --bootstrap-password {{ ADMIN_PASS }} --bootstrap-admin-url http://controller1:35357/v3/ --bootstrap-internal-url http://controller1:5000/v3/ --bootstrap-public-url http://controller1:5000/v3/ --bootstrap-region-id RegionOne
+#  ignore_errors: yes
+  
+#- name: Transferring httpd.conf
+#  template: src=httpd.conf.j2 dest=/etc/httpd/conf/httpd.conf
+
+#- name: symlinking wsgi-keystone
+#  file: src=/usr/share/keystone/wsgi-keystone.conf dest=/etc/httpd/conf.d/wsgi-keystone.conf state=link
+
+#- name: Starting httpd
+#  service: name=httpd enabled=yes state=started
+
+#- name: Creating admin config file
+#  template: src=admin.sh.js dest=/home/vagrant/admin.sh
+
+#- name: Creating openstack etc dir
+#  file: path=/etc/openstack state=directory mode=0600
+
+#- name: Transferring clouds.yaml
+#  template: src=clouds.yaml.j2 dest=/etc/openstack/clouds.yaml
+
+#- name: Installing Python Shade
+#  pip: name=shade
+
+#- name: Creating Service Project
+#  os_project:
+#    cloud: default
+#    description: Service Project
+#    domain_id: default
+#    enabled: true
+#    name: service
+#    state: present
+
+#- name: Creating Demo Project
+#  os_project:
+#    cloud: default
+#    description: Demo Project
+#    domain_id: default
+#    enabled: true
+#    name: demo
+#    state: present
+
+
+#- name: Creating user role
+#  os_keystone_role:
+#    cloud: default
+#    state: present
+#    name: user
+ 
+
+#- name: Transferring new keystone-paste.ini
+#  copy: src=keystone-paste.ini dest=/etc/keystone/keystone-paste.ini

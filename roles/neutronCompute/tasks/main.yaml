@@ -1,0 +1,19 @@
+---
+
+- name: Installing neutron-compute components
+  yum: name={{ item }} state=installed
+  with_items: 
+    - openstack-neutron-linuxbridge
+    - ebtables
+    - ipset
+
+- name: Transfering neutron config
+  template: src=neutron.conf.j2 dest=/etc/neutron/neutron.conf
+
+- name: Transfering linuxbridge agent
+  template: src=linuxbridge_agent.ini.j2 dest=/etc/neutron/plugins/ml2/linuxbridge_agent.ini
+
+- name: Starting neutron services
+  service: name={{ item }} state=started enabled=yes
+  with_items:
+    - neutron-linuxbridge-agent

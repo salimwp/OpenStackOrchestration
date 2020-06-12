@@ -1,0 +1,22 @@
+clouds:
+  default:
+    auth:
+      auth_url: http://controller1:35357/v3
+      project_name: admin
+      tenant_name: admin
+      username: admin
+      password: {{ ADMIN_PASS }}
+      user_domain_name: Default
+      project_domain_name: Default
+    identity_api_version: "3"
+  demo:
+    auth:
+      auth_url: http://controller1:5000/v3
+      project_name: demo
+      tenant_name: demo
+      username: demo
+      password: demo1234
+      user_domain_name: Default
+      project_domain_name: Default
+    identity_api_version: "3"
+

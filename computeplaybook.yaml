@@ -1,0 +1,12 @@
+---
+  
+- name: Setting up environment on Controller
+  hosts: compute1
+  become: yes
+  become_method: sudo
+  roles:
+    - commonCompute
+    - packages
+    - novaCompute
+    - neutronCompute
+

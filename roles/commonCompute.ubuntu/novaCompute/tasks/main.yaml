@@ -1,0 +1,27 @@
+---
+
+- name: Installing nova-compute package
+  yum: name=openstack-nova-compute state=installed
+
+- name: Transferring nova-compute config
+  template: src=nova.conf.j2 dest=/etc/nova/nova.conf
+
+- name: Starting nova services
+  service: name={{ item }} state=started enabled=yes
+  with_items:
+    - libvirtd
+    - openstack-nova-compute
+
+- name: Adding compute host to controller
+  delegate_to: controller1
+  become: yes
+  become_user: nova
+  shell: |
+    export OS_USERNAME=admin
+    export OS_PASSWORD=abca20f4dd44a5dc247c
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=Default
+    export OS_PROJECT_DOMAIN_NAME=Default
+    export OS_AUTH_URL=http://controller1:35357/v3
+    export OS_IDENTITY_API_VERSION=3
+    nova-manage cell_v2 discover_hosts --verbose

@@ -1,0 +1,21 @@
+---
+
+- name: Install the common software properties
+  apt:
+    name: software-properties-common
+    state: installed
+
+- name: Installing cloud repo
+  apt_repository:
+    repo: 'cloud-archive:ocata'
+
+- name: Updating server
+  apt:
+    name: '*'
+    state: latest
+
+- name: Install Openstack python client
+  apt:
+    name: python-openstackclient
+    state: installed
+

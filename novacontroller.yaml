@@ -1,0 +1,8 @@
+---
+
+- name: Setting up Nova on Controller
+  hosts: controller1
+  become: yes
+  become_method: sudo
+  roles:
+    - novaController

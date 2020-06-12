@@ -1,0 +1,98 @@
+---
+
+- name: Creating neutron database
+  mysql_db: name={{ item }}  state=present login_user=root login_password={{ MARIADB_PASS }}
+  with_items:
+    - neutron
+
+- name: Creating neutron DB user
+  mysql_user: name=neutron password={{ NEUTRON_DBPASS }} priv='neutron.*:ALL' state=present login_user=root login_password={{ MARIADB_PASS }} host="{{ item }}"
+  with_items:
+    - "localhost.localdomain"
+    - "127.0.0.1"
+    - "::1"
+    - "compute1"
+    - "10.0.0.31"
+    - "controller1"
+    - "10.0.0.11"
+
+- name: Creating neutron user
+  os_user:
+    cloud: default
+    state: present
+    name: neutron
+    password: "{{ NEUTRON_PASS }}"
+    email: neutron@test.domain
+    domain: default
+
+- name: adding admin role to neutron
+  os_user_role:
+    cloud: default
+    state: present
+    user: neutron
+    role: admin
+    project: service
+
+- name: Creating neutron service
+  os_keystone_service:
+    cloud: default
+    state: present
+    name: neutron
+    service_type: network
+    description: OpenStack Networking
+
+- name: Creating Network service API endpoints
+  shell: |
+    export OS_USERNAME=admin
+    export OS_PASSWORD={{ ADMIN_PASS }}
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=Default
+    export OS_PROJECT_DOMAIN_NAME=Default
+    export OS_AUTH_URL=http://controller1:35357/v3
+    export OS_IDENTITY_API_VERSION=3
+    openstack endpoint list | grep neutron
+    if [ $? -eq 1 ]; then
+      openstack endpoint create --region RegionOne network public http://controller1:9696
+      openstack endpoint create --region RegionOne network internal http://controller1:9696
+      openstack endpoint create --region RegionOne network admin http://controller1:9696
+    fi
+
+- name: Installing neutron packages
+  yum: name={{ item }} state=installed
+  with_items:
+    - openstack-neutron
+    - openstack-neutron-ml2
+    - openstack-neutron-linuxbridge
+    - ebtables
+
+- name: Transfering neutron conf
+  template: src=neutron.conf.j2 dest=/etc/neutron/neutron.conf
+
+- name: Transfering ml2 conf
+  template: src=ml2_conf.ini.j2 dest=/etc/neutron/plugins/ml2/ml2_conf.ini
+
+- name: Transfering linuxbridge conf
+  template: src=linuxbridge_agent.ini.j2 dest=/etc/neutron/plugins/ml2/linuxbridge_agent.ini
+
+- name: Transfering DHCP agent conf
+  template: src=dhcp_agent.ini.j2 dest=/etc/neutron/dhcp_agent.ini
+
+- name: Transfering metadata conf
+  template: src=metadata_agent.ini.j2 dest=/etc/neutron/metadata_agent.ini
+
+- name: Symlinking plugin to ml2conf
+  file: src=/etc/neutron/plugins/ml2/ml2_conf.ini dest=/etc/neutron/plugin.ini state=link
+
+- name: initializing neutron database
+  become: yes
+  become_user: neutron
+  command: neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head
+  ignore_errors: no
+
+- name: Start the Networking services and configure them to start when the system boots
+  service: name={{ item }} state=started enabled=yes
+  with_items:
+    - neutron-server
+    - neutron-linuxbridge-agent
+    - neutron-dhcp-agent
+    - neutron-metadata-agent
